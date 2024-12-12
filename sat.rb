@@ -1,137 +1,136 @@
-def compare_clauses(a, b)
+def compare(a, b)
   a[:size] <=> b[:size]  # ordine crescatoare
 end
 
-def sort_clauses_by_size(formula)
-  formula[:clauze].sort! { |a, b| compare_clauses(a, b) }
+def sort_by_size(formula)
+  formula[:clauses].sort! { |a, b| compare(a, b) }
 end
 
-def get_index(formula, raspuns)
-  # Use a heuristic to select the next variable
-  variable_count = Hash.new(0)
-  formula[:clauze].each do |clauza|
-    clauza[:variabile].each do |var|
-      variable_count[var.abs] += 1 if raspuns[var.abs] == 0
+def idx(formula, answer)
+  count_vars = Hash.new(0)  # dictionar pentru a numara de cate ori apare fiecare variabila
+  formula[:clauses].each do |clause| 
+    clause[:vars].each do |var|
+      count_vars[var.abs] += 1 if answer[var.abs] == 0 # daca variabila nu e initializata
     end
   end
-  variable_count.max_by { |_, count| count }[0]
+  count_vars.max_by { |_, count| count }[0] # se returneaza variabila care apare de cele mai multe ori
 end
 
-def find_unitary(formula, rezolvare)
-  formula[:clauze].each do |clauza|
-    found = false
-    not_init = 0
+def unifind(formula, solve)  # se cauta clauza unitare
+  formula[:clauses].each do |clause| 
+    found = false 
+    un_init = 0
     index = 0
-    clauza[:variabile].each do |var|
-      if (var > 0 && rezolvare[:raspuns][var] == 1) || (var < 0 && rezolvare[:raspuns][-var] == -1)
+    clause[:vars].each do |var|
+      if (var > 0 && solve[:answer][var] == 1) || (var < 0 && solve[:answer][-var] == -1) 
         found = true  # clauza e adevarata
         break
       end
-      if var > 0 && rezolvare[:raspuns][var] == 0
-        not_init += 1
+      if var > 0 && solve[:answer][var] == 0 
+        un_init += 1
         index = var
-      elsif var < 0 && rezolvare[:raspuns][-var] == 0
-        not_init += 1
+      elsif var < 0 && solve[:answer][-var] == 0
+        un_init += 1
         index = var
       end
     end
-    return index if !found && not_init == 1  # am gasit clauza unitara 
+    return index if !found && un_init == 1  # am gasit clauza unitara 
   end
   -1  # nu exista clauze unitare
 end
 
-def verify(formula, raspuns)
+def check(formula, answer)  # se verifica daca formula e adevarata
   nr = 0
-  formula[:clauze].each do |clauza|
+  formula[:clauses].each do |clause|
     found = false
-    not_init = 0
-    clauza[:variabile].each do |var|
-      if (var > 0 && raspuns[var] == 1) || (var < 0 && raspuns[-var] == -1)
+    un_init = 0
+    clause[:vars].each do |var|  
+      if (var > 0 && answer[var] == 1) || (var < 0 && answer[-var] == -1) # daca variabila e adevarata
         found = true
         nr += 1
         break
       end
-      not_init += 1 if var > 0 && raspuns[var] == 0
-      not_init += 1 if var < 0 && raspuns[-var] == 0
+      un_init += 1 if var > 0 && answer[var] == 0  # daca variabila nu e initializata
+      un_init += 1 if var < 0 && answer[-var] == 0 
     end
-    return -1 if !found && not_init == 0  # daca o clauza e falsa si totul e initializat
+    return -1 if !found && un_init == 0  # daca o clauza e falsa si totul e initializat
   end
-  return 1 if nr == formula[:nr_clauze]  # toate clauzele sunt adevarate
-  2  # momentan unele clauze nu se pot decide
+  return 1 if nr == formula[:clauses_cnt]  # toate clauzele sunt adevarate
+  2  # nu pot decide momentan
 end
 
-$copied = []  # vector in care se vor pune toti literalii proveniti din unit propagation
-$copy_index = 0
+$cpy = []  # vectori pentru a copia literalii adaugati prin unit propagation
+$cpy_idx = 0
 
-def unitpropagation(formula, rezolvare)
+def unitpropagation(formula, solve) 
   loop do
-    index = find_unitary(formula, rezolvare)  # se obtine literalul pentru unit propagation
+    index = unifind(formula, solve)  # se obtine literalul pentru unit propagation
     if index != -1
       if index > 0
-        $copied[$copy_index] = index
-        $copy_index += 1  # se copiaza literalul adaugat prin unit propagation
-        rezolvare[:raspuns][index] = 1
+        $cpy[$cpy_idx] = index
+        $cpy_idx += 1  # se copiaza literalul adaugat prin unit propagation
+        solve[:answer][index] = 1
       elsif index < 0
-        $copied[$copy_index] = -index
-        $copy_index += 1  # se copiaza literalul adaugat prin unit propagation
-        rezolvare[:raspuns][-index] = -1
+        $cpy[$cpy_idx] = -index
+        $cpy_idx += 1  # se copiaza literalul adaugat prin unit propagation
+        solve[:answer][-index] = -1
       end
-      value = verify(formula, rezolvare[:raspuns])  # se verifica daca s a falsificat formula
+      value = check(formula, solve[:answer])  # se verifica daca s a falsificat formula
       return value if value != 2
     else
-      value = verify(formula, rezolvare[:raspuns])  # se verifica daca s a falsificat formula
+      value = check(formula, solve[:answer])
       return value
     end
   end
 end
 
-def DPLL(formula, rezolvare)
-  unitprop_res = unitpropagation(formula, rezolvare)  # se face uni propagationul
+def DPLL(formula, solve)
+  unitprop_res = unitpropagation(formula, solve)  # se face unitpropagation
   return unitprop_res if unitprop_res == 1  # daca s a returnat 1 inseamna ca s a gasit o formula
   if unitprop_res == -1  # daca s a falsificat din unit propagation se revine la forma de dinainte de aplicare a metodei
-    $copy_index.times do |i|
-      rezolvare[:raspuns][$copied[i]] = 0
+    $cpy_idx.times do |i|
+      solve[:answer][$cpy[i]] = 0
     end
-    $copy_index = 0
+    $cpy_idx = 0
     return -1  # se intoarce cu un nivel inapoi
   end
-  literal = get_index(formula, rezolvare[:raspuns])  # se ia urmatorul literal disponibil
-  rezolvare[:raspuns][literal] = 1  # il consideram adevarat
-  res = DPLL(formula, rezolvare)
+  literal = idx(formula, solve[:answer])  # se ia urmatorul literal disponibil
+  solve[:answer][literal] = 1  # il consideram adevarat
+  res = DPLL(formula, solve)
   return 1 if res == 1  # s a gasit o formula
-  rezolvare[:raspuns][literal] = -1  # daca nu s a gasit o formula schimbam valoarea literalului
-  res1 = DPLL(formula, rezolvare)
-  if res1 == -1
-    rezolvare[:raspuns][literal] = 0  # se reseteaza literalii pentru a continua backtrackingul
+  solve[:answer][literal] = -1  # daca nu s a gasit o formula schimbam valoarea literalului
+  restmp = DPLL(formula, solve)
+  if restmp == -1
+    solve[:answer][literal] = 0  # se reseteaza literalii pentru a continua backtrackingul
   end
-  res1
+  restmp
 end
 
-def read_formula(input_file)
+def read_formula(input_file)  # citirea formulei din fisier
   formula = {}
-  formula[:nr_variabile_total] = input_file.gets.to_i
-  formula[:nr_clauze] = input_file.gets.to_i
-  formula[:clauze] = []
-  formula[:nr_clauze].times do
-    aux = { variabile: [], size: 0 }
+  formula[:vars_cnt] = input_file.gets.to_i
+  formula[:clauses_cnt] = input_file.gets.to_i
+  formula[:clauses] = []
+  formula[:clauses_cnt].times do
+    aux = { vars: [], size: 0 }
     loop do
       curr = input_file.gets.to_i
       break if curr == 0
-      aux[:variabile] << curr
+      aux[:vars] << curr
       aux[:size] += 1
     end
-    formula[:clauze] << aux
+    formula[:clauses] << aux
   end
   formula
 end
 
-def write_result(output_file, result, rezolvare, formula)
+def write_result(output_file, result, solve, formula) # scrierea rezultatului in fisier
   if result == -1
     output_file.puts "s UNSATISFIABLE"
   else
     output_file.print "s SATISFIABLE\nv "
-    formula[:nr_variabile_total].times do |i|
-      if rezolvare[:raspuns][i + 1] >= 0
+    formula[:vars_cnt].times do |i|
+      if solve[:answer][i + 1] >= 0
         output_file.print "#{i + 1} "
       else
         output_file.print "-#{i + 1} "
@@ -142,7 +141,7 @@ def write_result(output_file, result, rezolvare, formula)
 end
 
 def main
-  input_filename = ARGV[0]
+  input_filename = ARGV[0]  
   output_filename = ARGV[1]
 
   input_file = File.open(input_filename, "r")
@@ -154,30 +153,30 @@ def main
   end
 
   # Read the "p cnf" line
-  _, nr_variabile_total, nr_clauze = buffer.match(/p cnf\s+(\d+)\s+(\d+)/).to_a
+  _, vars_cnt, clauses_cnt = buffer.match(/p cnf\s+(\d+)\s+(\d+)/).to_a # citesc numarul de variabile si clauze
   formula = {
-    nr_variabile_total: nr_variabile_total.to_i,
-    nr_clauze: nr_clauze.to_i,
-    clauze: []
+    vars_cnt: vars_cnt.to_i,
+    clauses_cnt: clauses_cnt.to_i,
+    clauses: []
   }
 
   # Read the clauses
-  formula[:nr_clauze].times do
-    aux = { variabile: [], size: 0 }
+  formula[:clauses_cnt].times do
+    aux = { vars: [], size: 0 }
     input_file.gets.split.each do |num|
       curr = num.to_i
       break if curr == 0
-      aux[:variabile] << curr
+      aux[:vars] << curr
       aux[:size] += 1
     end
-    formula[:clauze] << aux
+    formula[:clauses] << aux
   end
 
-  rezolvare = { raspuns: Array.new(formula[:nr_variabile_total] + 1, 0) }
+  solve = { answer: Array.new(formula[:vars_cnt] + 1, 0) }  # vector pentru a retine valorile variabilelor
 
-  sort_clauses_by_size(formula)  # sortare clauze dupa marimea lor
-  result = DPLL(formula, rezolvare)
-  write_result(output_file, result, rezolvare, formula)
+  sort_by_size(formula)  # sortare clauses dupa marimea lor
+  result = DPLL(formula, solve) # se apeleaza functia DPLL
+  write_result(output_file, result, solve, formula) # se scrie rezultatul in fisier
 
   input_file.close
   output_file.close
